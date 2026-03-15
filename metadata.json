@@ -1,0 +1,7 @@
+{
+  "name": "StudySnap AI",
+  "description": "Elite academic intelligence engine that transforms notes and images into structured study materials.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
