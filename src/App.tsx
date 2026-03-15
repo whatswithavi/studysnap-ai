@@ -1,8 +1,4 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
+/// <reference types="vite/client" />
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { 
@@ -205,13 +201,20 @@ export default function App() {
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const model = "gemini-1.5-flash"; // Changed from gemini-3-flash-preview (not available) to a standard one
+      // Handle both Vite-style and process.env API key injection
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY || (process.env as any).GEMINI_API_KEY;
+      
+      if (!apiKey || apiKey === "MY_GEMINI_API_KEY") {
+        throw new Error("Gemini API Key is missing. Please set VITE_GEMINI_API_KEY or GEMINI_API_KEY in your deployment environment variables.");
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      const model = "gemini-1.5-flash";
       
       const base64Data = image.split(',')[1];
       const mimeType = image.split(';')[0].split(':')[1];
 
-      const response = await ai.models.generateContent({
+      const response = await (ai as any).models.generateContent({
         model,
         contents: [
           {
@@ -227,17 +230,17 @@ export default function App() {
         }
       });
 
-      const text = response.text || "";
-      setResult(text);
+      const resultText = response.text || "";
+      setResult(resultText);
 
       // Extract JSON data
       try {
-        const flashcardMatch = text.match(/## 🃏 FLASHCARDS\n```json\n([\s\S]*?)\n```/);
+        const flashcardMatch = resultText.match(/## 🃏 FLASHCARDS\n```json\n([\s\S]*?)\n```/);
         if (flashcardMatch?.[1]) {
           setFlashcards(JSON.parse(flashcardMatch[1]));
         }
 
-        const quizMatch = text.match(/## ⚡ RAPID FIRE QUIZ\n```json\n([\s\S]*?)\n```/);
+        const quizMatch = resultText.match(/## ⚡ RAPID FIRE QUIZ\n```json\n([\s\S]*?)\n```/);
         if (quizMatch?.[1]) {
           setQuizQuestions(JSON.parse(quizMatch[1]));
         }
@@ -247,9 +250,9 @@ export default function App() {
 
       setShowVault(true);
       setActiveTab('Summary');
-    } catch (err) {
+    } catch (err: any) {
       console.error("Gemini Error:", err);
-      setError("Failed to analyze image. Please try again.");
+      setError(err.message || "Failed to analyze image. Please check your API key and connection.");
     } finally {
       setLoading(false);
     }
@@ -388,6 +391,17 @@ export default function App() {
               <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
               <canvas ref={canvasRef} className="hidden" />
             </motion.div>
+
+            {error && (
+              <div className="brutalist-card bg-vault-pink text-white p-6 brutalist-shadow-lg mb-8">
+                <div className="flex items-center gap-3 mb-2">
+                  <X size={20} className="p-1 bg-black rounded-full" />
+                  <p className="font-black uppercase">Tactical Error</p>
+                </div>
+                <p className="font-mono text-sm leading-relaxed">{error}</p>
+                <p className="font-mono text-[10px] mt-4 opacity-70 underline uppercase">Potential Fix: Check Vercel/Netlify Environment Variables for GEMINI_API_KEY</p>
+              </div>
+            )}
 
             {image && !loading && !result && (
               <motion.button 
