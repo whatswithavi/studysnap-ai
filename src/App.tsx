@@ -1,7 +1,7 @@
 // Force redeploy - Update Vercel
 /// <reference types="vite/client" />
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { 
   Upload, 
   BookOpen, 
@@ -209,25 +209,28 @@ export default function App() {
         throw new Error("Gemini API Key is missing. Please set VITE_GEMINI_API_KEY or GEMINI_API_KEY in your deployment environment variables.");
       }
 
-      const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1' } as any);
-      const model = "gemini-1.5-flash";
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash",
+        systemInstruction: SYSTEM_INSTRUCTION
+      });
       
       const base64Data = image.split(',')[1];
       const mimeType = image.split(';')[0].split(':')[1];
 
-      const response = await (ai as any).models.generateContent({
-        model,
-        contents: [
-          {
-            parts: [
-              { text: `${SYSTEM_INSTRUCTION}\n\nAnalyze this academic material and provide the structured study guide as requested.` },
-              { inlineData: { data: base64Data, mimeType } }
-            ]
-          }
-        ]
-      });
+      const imagePart = {
+        inlineData: {
+          data: base64Data,
+          mimeType
+        }
+      };
 
-      const resultText = response.text || "";
+      const response = await model.generateContent([
+        "Analyze this academic material and provide the structured study guide as requested.",
+        imagePart
+      ]);
+
+      const resultText = response.response.text();
       setResult(resultText);
 
       // Extract JSON data
