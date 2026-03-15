@@ -219,15 +219,11 @@ export default function App() {
         contents: [
           {
             parts: [
-              { text: "Analyze this academic material and provide the structured study guide as requested." },
+              { text: `${SYSTEM_INSTRUCTION}\n\nAnalyze this academic material and provide the structured study guide as requested.` },
               { inlineData: { data: base64Data, mimeType } }
             ]
           }
-        ],
-        config: {
-          systemInstruction: SYSTEM_INSTRUCTION,
-          temperature: 0.4,
-        }
+        ]
       });
 
       const resultText = response.text || "";
