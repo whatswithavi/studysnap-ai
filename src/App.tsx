@@ -208,7 +208,7 @@ export default function App() {
         throw new Error("Gemini API Key is missing. Please set VITE_GEMINI_API_KEY or GEMINI_API_KEY in your deployment environment variables.");
       }
 
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1' } as any);
       const model = "gemini-1.5-flash";
       
       const base64Data = image.split(',')[1];
