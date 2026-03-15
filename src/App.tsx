@@ -53,18 +53,14 @@ Format:
 
 ---
 
-## 🃏 FLASHCARDS (5 cards)
-Generate exactly 5 flashcards in this format:
-
-**Card 1**
-Q: [Question based on the content]
-A: [Precise, memorable answer]
-
-**Card 2**
-Q: 
-A: 
-
-(continue for all 5)
+## 🃏 FLASHCARDS
+Generate exactly 5 flashcards in this JSON format inside a code block:
+\`\`\`json
+[
+  {"q": "Question 1", "a": "Answer 1"},
+  ...
+]
+\`\`\`
 
 ---
 
@@ -78,17 +74,27 @@ Generate 5 exam-style questions ranging from easy to hard:
 
 ---
 
-## ⚡ QUICK REVISION (3 bullet points)
-Give 3 brutally concise one-liners that capture the absolute essence of this topic. These should be so sharp that reading them once is enough to remember the whole topic.
+## ⚡ RAPID FIRE QUIZ
+Generate exactly 5 multiple choice questions in this JSON format inside a code block:
+\`\`\`json
+[
+  {
+    "question": "Question text?",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "answer": 0
+  },
+  ...
+]
+\`\`\`
 
 ---
 
 RULES YOU MUST FOLLOW:
 - Never skip any section
 - Always use the exact headers shown above
+- Use JSON blocks for Flashcards and Rapid Fire Quiz
 - If the image is unclear, extract whatever is visible and do your best
-- Be academically precise but humanly readable
-- Format everything cleanly for maximum readability`;
+- Be academically precise but humanly readable`;
 
 const SPRING_CONFIG = { stiffness: 180, damping: 28 };
 
@@ -110,15 +116,31 @@ const FloatingShape = ({ children, className }: { children: React.ReactNode, cla
   </motion.div>
 );
 
+interface Flashcard {
+  q: string;
+  a: string;
+}
+
+interface QuizQuestion {
+  question: string;
+  options: string[];
+  answer: number;
+}
+
 export default function App() {
   const [image, setImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([]);
+  const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
+  const [score, setScore] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('Notes');
+  const [activeTab, setActiveTab] = useState('Summary');
   const [showVault, setShowVault] = useState(false);
   const [quizMode, setQuizMode] = useState(false);
+  const [flippedCards, setFlippedCards] = useState<Record<number, boolean>>({});
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -184,7 +206,7 @@ export default function App() {
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const model = "gemini-3-flash-preview";
+      const model = "gemini-1.5-flash"; // Changed from gemini-3-flash-preview (not available) to a standard one
       
       const base64Data = image.split(',')[1];
       const mimeType = image.split(';')[0].split(':')[1];
@@ -205,8 +227,26 @@ export default function App() {
         }
       });
 
-      setResult(response.text || "No analysis generated.");
+      const text = response.text || "";
+      setResult(text);
+
+      // Extract JSON data
+      try {
+        const flashcardMatch = text.match(/## 🃏 FLASHCARDS\n```json\n([\s\S]*?)\n```/);
+        if (flashcardMatch?.[1]) {
+          setFlashcards(JSON.parse(flashcardMatch[1]));
+        }
+
+        const quizMatch = text.match(/## ⚡ RAPID FIRE QUIZ\n```json\n([\s\S]*?)\n```/);
+        if (quizMatch?.[1]) {
+          setQuizQuestions(JSON.parse(quizMatch[1]));
+        }
+      } catch (e) {
+        console.error("Failed to parse AI JSON response", e);
+      }
+
       setShowVault(true);
+      setActiveTab('Summary');
     } catch (err) {
       console.error("Gemini Error:", err);
       setError("Failed to analyze image. Please try again.");
@@ -215,11 +255,23 @@ export default function App() {
     }
   };
 
-  const reset = () => {
-    setImage(null);
-    setResult(null);
-    setError(null);
-    setShowVault(false);
+  const resetQuiz = () => {
+    setCurrentQuizIndex(0);
+    setScore(0);
+    setQuizMode(true);
+  };
+
+  const handleQuizAnswer = (index: number) => {
+    if (index === quizQuestions[currentQuizIndex].answer) {
+      setScore(s => s + 100);
+    }
+    
+    if (currentQuizIndex < quizQuestions.length - 1) {
+      setCurrentQuizIndex(i => i + 1);
+    } else {
+      // Quiz finished
+      setTimeout(() => setQuizMode(false), 1500);
+    }
   };
 
   return (
@@ -248,8 +300,7 @@ export default function App() {
         </motion.div>
 
         <div className="hidden md:flex items-center gap-4">
-          <button className="brutalist-button bg-vault-yellow hover:bg-yellow-400">MY SEM</button>
-          <button className="brutalist-button bg-white hover:bg-zinc-100">ALL SEMS</button>
+          <button className="brutalist-button bg-vault-yellow hover:bg-yellow-400">STUDY MODE</button>
           <button className="brutalist-button bg-black text-white hover:bg-zinc-800">
             <Settings size={18} />
           </button>
@@ -257,49 +308,36 @@ export default function App() {
       </nav>
 
       <main className="max-w-7xl mx-auto px-6 py-12 relative z-10">
-        {/* Hero Section */}
         <section className="mb-24 relative">
           <motion.div
             initial={{ opacity: 0, x: -50 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ type: "spring", ...SPRING_CONFIG }}
           >
-            <h2 className="text-7xl md:text-9xl mb-4 leading-none">
-              YOUR NOTES.<br />
-              <span className="text-vault-pink">YOUR WEAPONS.</span>
+            <h2 className="text-7xl md:text-9xl mb-4 leading-none uppercase">
+              SCAN.<br />
+              <span className="text-vault-pink">DECRYPT.</span><br />
+              <span className="text-emerald-green">DOMINATE.</span>
             </h2>
-            <p className="font-serif italic text-2xl md:text-3xl text-zinc-600 mb-8">
-              "Tactical intelligence for the modern academic operative."
+            <p className="font-serif italic text-2xl md:text-3xl text-zinc-600 mb-8 max-w-2xl">
+              "Upload any study material to instantly generate high-octane flashcards and practice sessions."
             </p>
             
             <div className="relative inline-block">
-              <motion.div
-                animate={{ y: [0, -10, 0] }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="absolute -top-16 -right-16 hidden md:block"
-              >
-                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" className="rotate-12">
-                  <path d="M10 10C30 10 50 30 50 50M50 50L40 40M50 50L60 40" stroke="black" strokeWidth="4" strokeLinecap="round" />
-                  <text x="0" y="80" className="font-mono text-xs font-bold fill-black">START HERE</text>
-                </svg>
-              </motion.div>
-              
               <button 
                 onClick={() => fileInputRef.current?.click()}
                 className="brutalist-button bg-vault-yellow text-xl py-4 px-12 brutalist-shadow-lg flex items-center gap-4"
               >
-                DEPLOY INTEL <ArrowRight size={24} />
+                DEPLOY SCANNER <ArrowRight size={24} />
               </button>
             </div>
           </motion.div>
         </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-          {/* Input Area */}
-          <div className="lg:col-span-5 space-y-8">
+        <div className="max-w-3xl mx-auto">
             <motion.div 
               whileHover={{ rotate: -1 }}
-              className="brutalist-card border-heavy relative overflow-hidden group"
+              className="brutalist-card border-heavy relative overflow-hidden group mb-12"
             >
               <div className="absolute top-0 right-0 bg-black text-white font-mono text-[10px] px-3 py-1 uppercase">
                 Scanner_Active
@@ -308,34 +346,30 @@ export default function App() {
               {!image && !isCameraOpen ? (
                 <div 
                   onClick={() => fileInputRef.current?.click()}
-                  className="aspect-square flex flex-col items-center justify-center gap-6 cursor-pointer"
+                  className="aspect-video flex flex-col items-center justify-center gap-6 cursor-pointer bg-zinc-50"
                 >
                   <div className="w-24 h-24 bg-zinc-100 brutalist-border flex items-center justify-center text-black group-hover:bg-vault-yellow transition-colors">
                     <Upload size={40} />
                   </div>
                   <div className="text-center">
-                    <p className="text-2xl font-black">DROP INTEL HERE</p>
-                    <p className="font-mono text-sm text-zinc-500 mt-2">SUPPORTED: JPG, PNG, WEBP</p>
+                    <p className="text-2xl font-black">DROP ACADEMIC INTEL</p>
+                    <p className="font-mono text-sm text-zinc-500 mt-2">WHITEBOARDS, NOTES, TEXTBOOKS</p>
                   </div>
                   <button 
                     onClick={(e) => { e.stopPropagation(); startCamera(); }}
                     className="brutalist-button bg-black text-white mt-4 flex items-center gap-2"
                   >
-                    <Camera size={20} /> ACTIVATE LENS
+                    <Camera size={20} /> USE LENS
                   </button>
                 </div>
               ) : isCameraOpen ? (
-                <div className="aspect-square bg-black brutalist-border relative overflow-hidden">
+                <div className="aspect-video bg-black brutalist-border relative overflow-hidden">
                   <video 
                     ref={videoRef} 
                     autoPlay 
                     playsInline 
                     className="w-full h-full object-cover crt-flicker"
                   />
-                  <div className="absolute inset-0 border-[20px] border-black/20 pointer-events-none flex items-center justify-center">
-                    <div className="w-full h-px bg-vault-pink/30 absolute top-1/2" />
-                    <div className="h-full w-px bg-vault-pink/30 absolute left-1/2" />
-                  </div>
                   <div className="absolute bottom-6 left-0 right-0 flex justify-center items-center gap-6">
                     <button onClick={stopCamera} className="brutalist-button bg-white p-3"><X size={24} /></button>
                     <button onClick={capturePhoto} className="w-20 h-20 bg-vault-pink brutalist-border rounded-full flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-1 active:translate-y-1">
@@ -344,7 +378,7 @@ export default function App() {
                   </div>
                 </div>
               ) : (
-                <div className="aspect-square brutalist-border relative overflow-hidden group">
+                <div className="aspect-video brutalist-border relative overflow-hidden group">
                   <img src={image} alt="Intel" className="w-full h-full object-cover" />
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <button onClick={() => setImage(null)} className="brutalist-button bg-white">RESCAN</button>
@@ -372,69 +406,15 @@ export default function App() {
                   <Loader2 size={64} className="text-vault-yellow animate-spin" />
                 </div>
                 <div className="text-center space-y-2">
-                  <p className="text-2xl font-black">PROCESSING INTEL...</p>
-                  <p className="font-mono text-xs text-vault-pink animate-pulse">BYPASSING_ACADEMIC_FIREWALLS</p>
+                  <p className="text-2xl font-black uppercase">Analyzing Intel...</p>
+                  <p className="font-mono text-xs text-vault-pink animate-pulse uppercase">Generating Flashcards & Quiz</p>
                 </div>
               </div>
             )}
-          </div>
-
-          {/* Important Shorts Section */}
-          <div className="lg:col-span-7 space-y-8">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-4xl">IMPORTANT SHORTS</h3>
-              <div className="font-mono text-sm bg-vault-pink text-white px-3 py-1 brutalist-border">LIVE_FEED</div>
-            </div>
-            
-            <div className="flex gap-6 overflow-x-auto pb-8 snap-x">
-              {[1, 2, 3].map((i) => (
-                <motion.div 
-                  key={i}
-                  whileHover={{ y: -10 }}
-                  className="flex-shrink-0 w-64 aspect-[9/16] brutalist-card border-vault-pink shadow-[8px_8px_0px_0px_#FF00FF] relative overflow-hidden snap-start"
-                >
-                  <img src={`https://picsum.photos/seed/edu${i}/400/700`} className="absolute inset-0 w-full h-full object-cover opacity-80" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-16 h-16 bg-vault-pink brutalist-border rounded-full flex items-center justify-center text-white shadow-lg">
-                      <Play fill="currentColor" size={24} />
-                    </div>
-                  </div>
-                  <div className="absolute bottom-4 left-4 right-4">
-                    <p className="font-mono text-[10px] text-vault-yellow mb-1">#INTEL_00{i}</p>
-                    <p className="text-white font-black text-lg leading-tight uppercase">Core Concepts of Quantum Intel</p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-
-            {/* Resource Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <motion.div 
-                whileHover={{ rotate: 1, scale: 1.02 }}
-                className="brutalist-card bg-vault-yellow"
-              >
-                <div className="font-mono text-xs font-bold mb-2">SUB_CODE: CS101</div>
-                <h4 className="text-2xl mb-4">DATA STRUCTURES</h4>
-                <p className="text-sm mb-6 font-medium">Master the tactical organization of information.</p>
-                <button className="brutalist-button bg-black text-white w-full">OPEN VAULT</button>
-              </motion.div>
-
-              <motion.div 
-                whileHover={{ rotate: -1, scale: 1.02 }}
-                className="brutalist-card bg-vault-purple text-white"
-              >
-                <div className="font-mono text-xs font-bold mb-2">SUB_CODE: MATH202</div>
-                <h4 className="text-2xl mb-4">ADVANCED CALCULUS</h4>
-                <p className="text-sm mb-6 font-medium">Decrypting the language of change.</p>
-                <button className="brutalist-button bg-white text-black w-full">OPEN VAULT</button>
-              </motion.div>
-            </div>
-          </div>
         </div>
       </main>
 
-      {/* Subject Detail Vault Overlay */}
+      {/* Intel Vault Overlay */}
       <AnimatePresence>
         {showVault && (
           <motion.div
@@ -449,9 +429,12 @@ export default function App() {
                 <div className="w-12 h-12 bg-black text-white flex items-center justify-center brutalist-border">
                   <Layers size={24} />
                 </div>
-                <h2 className="text-3xl">INTEL VAULT: DECRYPTED</h2>
+                <h2 className="text-3xl uppercase">Vault: Decrypted Intel</h2>
               </div>
-              <button onClick={() => setShowVault(false)} className="brutalist-button bg-black text-white">
+              <button 
+                onClick={() => { setShowVault(false); setShowVault(false); }}
+                className="brutalist-button bg-black text-white"
+              >
                 <X size={24} />
               </button>
             </div>
@@ -459,7 +442,7 @@ export default function App() {
             <div className="flex-1 flex overflow-hidden">
               {/* Sidebar Tabs */}
               <div className="w-64 border-r-8 border-black bg-zinc-50 flex flex-col">
-                {['Notes', 'Videos', 'Flashcards', 'PYQs'].map((tab) => (
+                {['Summary', 'Flashcards', 'Exam Questions'].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -472,7 +455,7 @@ export default function App() {
                   </button>
                 ))}
                 <button 
-                  onClick={() => setQuizMode(true)}
+                  onClick={resetQuiz}
                   className="h-32 bg-emerald-green text-black font-black text-2xl uppercase flex items-center justify-center gap-3 hover:bg-emerald-400 transition-colors"
                 >
                   <Zap size={28} /> RAPID FIRE
@@ -482,30 +465,69 @@ export default function App() {
               {/* Content Area */}
               <div className="flex-1 overflow-y-auto p-12 bg-white relative">
                 <div className="max-w-4xl mx-auto">
-                  {activeTab === 'Notes' && result && (
+                  {activeTab === 'Summary' && result && (
                     <motion.div 
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="brutalist-card brutalist-shadow-lg p-12 markdown-body"
                     >
-                      <Markdown>{result}</Markdown>
+                      <Markdown>{result.split('---')[1] + '---' + result.split('---')[2]}</Markdown>
                     </motion.div>
                   )}
                   {activeTab === 'Flashcards' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      {[1, 2, 3, 4, 5].map(i => (
+                      {flashcards.length > 0 ? flashcards.map((card, i) => (
                         <motion.div 
                           key={i}
-                          whileHover={{ scale: 1.05, rotate: i % 2 === 0 ? 2 : -2 }}
-                          className="brutalist-card bg-white min-h-[200px] flex flex-col justify-center items-center text-center p-8"
+                          whileHover={{ scale: 1.02, rotate: i % 2 === 0 ? 1 : -1 }}
+                          onClick={() => setFlippedCards(prev => ({ ...prev, [i]: !prev[i] }))}
+                          className="brutalist-card bg-white min-h-[250px] flex flex-col justify-center items-center text-center p-8 cursor-pointer relative perspective"
                         >
-                          <div className="font-mono text-xs text-vault-pink mb-4">CARD_00{i}</div>
-                          <p className="text-xl font-bold uppercase">Sample Question for decrypted intel?</p>
-                          <div className="mt-6 w-full h-1 bg-black" />
-                          <button className="mt-4 font-mono text-sm font-bold hover:text-vault-pink">REVEAL_ANSWER</button>
+                           <AnimatePresence mode="wait">
+                            {!flippedCards[i] ? (
+                              <motion.div
+                                key="q"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="space-y-4"
+                              >
+                                <div className="font-mono text-xs text-vault-pink uppercase">Card_00{i+1} / Side_A</div>
+                                <p className="text-xl font-black uppercase leading-tight">{card.q}</p>
+                                <div className="mt-6 w-full h-1 bg-black/10" />
+                                <p className="font-mono text-[10px] font-bold text-zinc-400">CLICK TO REVEAL INTEL</p>
+                              </motion.div>
+                            ) : (
+                              <motion.div
+                                key="a"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                className="space-y-4"
+                              >
+                                <div className="font-mono text-xs text-emerald-green uppercase">Card_00{i+1} / Side_B</div>
+                                <p className="text-lg font-bold text-zinc-700">{card.a}</p>
+                                <div className="mt-6 w-full h-1 bg-black/10" />
+                                <p className="font-mono text-[10px] font-bold text-zinc-400">CLICK TO FLIP BACK</p>
+                              </motion.div>
+                            )}
+                           </AnimatePresence>
                         </motion.div>
-                      ))}
+                      )) : (
+                        <div className="col-span-2 text-center py-20">
+                          <p className="text-2xl font-black uppercase text-zinc-300">No Flashcards Extracted</p>
+                        </div>
+                      )}
                     </div>
+                  )}
+                  {activeTab === 'Exam Questions' && result && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="brutalist-card brutalist-shadow-lg p-12 markdown-body"
+                    >
+                      <Markdown>{result.split('## 📝 POSSIBLE EXAM QUESTIONS')[1]?.split('---')[0]}</Markdown>
+                    </motion.div>
                   )}
                 </div>
               </div>
@@ -516,7 +538,7 @@ export default function App() {
 
       {/* Quiz Panel Overlay */}
       <AnimatePresence>
-        {quizMode && (
+        {quizMode && quizQuestions.length > 0 && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -530,22 +552,23 @@ export default function App() {
                   <div className="w-10 h-10 bg-emerald-green text-black flex items-center justify-center brutalist-border">
                     <Zap size={20} />
                   </div>
-                  <h3 className="text-3xl text-emerald-green">RAPID FIRE SESSION</h3>
+                  <h3 className="text-3xl text-emerald-green uppercase">Rapid Fire Active</h3>
                 </div>
                 <button onClick={() => setQuizMode(false)} className="brutalist-button bg-white text-black">ABORT</button>
               </div>
 
               <div className="space-y-12">
                 <div className="space-y-4">
-                  <p className="font-mono text-vault-pink text-sm">QUESTION_ID: 0x7F42</p>
-                  <h4 className="text-4xl md:text-5xl leading-tight">WHAT IS THE PRIMARY TACTICAL ADVANTAGE OF NEO-BRUTALIST DESIGN?</h4>
+                  <p className="font-mono text-vault-pink text-sm uppercase">Quest_ID: 0x{currentQuizIndex.toString(16).padStart(4, '0')}</p>
+                  <h4 className="text-4xl md:text-5xl leading-tight uppercase font-black">{quizQuestions[currentQuizIndex].question}</h4>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {['HIGH CONTRAST', 'SUBTLE GRADIENTS', 'SOFT SHADOWS', 'MINIMAL BORDERS'].map((opt, idx) => (
+                  {quizQuestions[currentQuizIndex].options.map((opt, idx) => (
                     <motion.button
                       key={opt}
                       whileHover={{ x: 10, backgroundColor: '#FFD700', color: '#000' }}
+                      onClick={() => handleQuizAnswer(idx)}
                       className="brutalist-button bg-zinc-800 text-white text-left py-6 flex items-center gap-4"
                     >
                       <span className="font-mono text-vault-pink">[{idx + 1}]</span> {opt}
@@ -555,8 +578,8 @@ export default function App() {
               </div>
 
               <div className="mt-12 pt-8 border-t-4 border-zinc-800 flex justify-between items-center font-mono text-xs">
-                <div className="text-zinc-500">TIME_REMAINING: 00:45</div>
-                <div className="text-emerald-green">SCORE: 1250_PTS</div>
+                <div className="text-zinc-500 uppercase">Current_Intel: {currentQuizIndex + 1} / {quizQuestions.length}</div>
+                <div className="text-emerald-green uppercase">Score_Accrued: {score}_PTS</div>
               </div>
             </div>
           </motion.div>
@@ -573,27 +596,26 @@ export default function App() {
               </div>
               <h1 className="text-2xl">STUDYSNAP</h1>
             </div>
-            <p className="font-mono text-xs text-zinc-500 leading-relaxed">
-              ENCRYPTED ACADEMIC INTELLIGENCE HUB.<br />
-              AUTHORIZED PERSONNEL ONLY.<br />
-              © 2026_STUDYSNAP_CORP
+            <p className="font-mono text-xs text-zinc-500 leading-relaxed uppercase">
+              Academic Intelligence Hub.<br />
+              Authorized Personnel Only.<br />
+              © 2026_STUDYSNAP_AI
             </p>
           </div>
           
           <div className="space-y-4">
-            <h5 className="text-xl text-vault-pink">QUICK_LINKS</h5>
-            <ul className="font-mono text-sm space-y-2">
-              <li className="hover:text-vault-yellow cursor-pointer">/ARCHIVES</li>
-              <li className="hover:text-vault-yellow cursor-pointer">/PROTOCOLS</li>
-              <li className="hover:text-vault-yellow cursor-pointer">/SUPPORT</li>
+            <h5 className="text-xl text-vault-pink uppercase">Quick_Links</h5>
+            <ul className="font-mono text-sm space-y-2 uppercase">
+              <li className="hover:text-vault-yellow cursor-pointer">/Archives</li>
+              <li className="hover:text-vault-yellow cursor-pointer">/Protocols</li>
             </ul>
           </div>
 
           <div className="space-y-4">
-            <h5 className="text-xl text-emerald-green">SYSTEM_STATUS</h5>
+            <h5 className="text-xl text-emerald-green uppercase">System_Status</h5>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-emerald-green rounded-full animate-pulse" />
-              <span className="font-mono text-xs">ALL_SYSTEMS_OPERATIONAL</span>
+              <span className="font-mono text-xs uppercase">All_Systems_Nominal</span>
             </div>
           </div>
         </div>
