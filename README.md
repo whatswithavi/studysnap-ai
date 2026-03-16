@@ -8,6 +8,8 @@ This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/7344c71a-98ab-4d28-ba8c-790c3464714c
 
+**Live Demo (Vercel):** [https://studysnap-ai-pi.vercel.app/](https://studysnap-ai-pi.vercel.app/)
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
